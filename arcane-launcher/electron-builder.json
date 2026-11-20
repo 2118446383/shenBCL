@@ -1,0 +1,54 @@
+{
+  "appId": "dev.shenbcl.launcher",
+  "productName": "shenBCL Launcher",
+  "directories": {
+    "output": "release-current"
+  },
+  "electronDist": "node_modules/electron/dist",
+  "electronLanguages": ["zh-CN", "zh-TW", "en-US"],
+  "compression": "maximum",
+  "files": [
+    "dist/main/main.js",
+    "dist/main/preload.cjs",
+    "dist/renderer/**/*",
+    "build/icon.png",
+    "package.json",
+    "!**/*.map",
+    "!node_modules/**/*"
+  ],
+  "extraFiles": [
+    {
+      "from": "build/THIRD_PARTY_LICENSES.txt",
+      "to": "THIRD_PARTY_LICENSES.txt"
+    },
+    {
+      "from": "README.md",
+      "to": "README.md"
+    },
+    {
+      "from": "THIRD_PARTY_NOTICES.md",
+      "to": "THIRD_PARTY_NOTICES.md"
+    },
+    {
+      "from": "docs",
+      "to": "docs",
+      "filter": [
+        "**/*.md",
+        "licenses/*.txt"
+      ]
+    }
+  ],
+  "asar": true,
+  "npmRebuild": false,
+  "win": {
+    "target": [
+      "portable"
+    ],
+    "artifactName": "shenBCL.exe",
+    "icon": "build/icon.ico",
+    "signExecutable": false
+  },
+  "portable": {
+    "requestExecutionLevel": "user"
+  }
+}

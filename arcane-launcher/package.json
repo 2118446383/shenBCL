@@ -1,0 +1,47 @@
+{
+  "name": "shenbcl-launcher",
+  "version": "0.3.6",
+  "private": true,
+  "description": "shenBCL 启动器 · Your world. Your rules.",
+  "author": "shenBCL contributors",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite --host 127.0.0.1",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json",
+    "build": "npm run typecheck && vite build && node scripts/build-main.mjs && node scripts/collect-licenses.mjs",
+    "start": "electron .",
+    "test": "node scripts/run-tests.mjs",
+    "package": "npm run build && electron-builder --win portable --config electron-builder.json",
+    "package:dir": "npm run build && electron-builder --win --dir --config electron-builder.json",
+    "build:icons": "node scripts/build-icons.mjs",
+    "source:review": "node scripts/export-review-source.mjs"
+  },
+  "dependencies": {},
+  "overrides": {
+    "@xmcl/yauzl": "2.10.0",
+    "@xmcl/unzip": "2.1.2",
+    "minimatch@>=7.0.0 <11.0.1": "11.0.1"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^22.10.0",
+    "@types/three": "^0.156.0",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "electron": "45.3.1",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.1.0",
+    "vue-tsc": "^3.3.14",
+    "@xmcl/core": "2.16.3",
+    "@xmcl/installer": "6.3.7",
+    "lucide-vue-next": "^0.468.0",
+    "skinview3d": "^3.4.2",
+    "three": "^0.156.1",
+    "vue": "^3.5.13"
+  }
+}
