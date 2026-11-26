@@ -22,20 +22,8 @@
       "to": "THIRD_PARTY_LICENSES.txt"
     },
     {
-      "from": "README.md",
-      "to": "README.md"
-    },
-    {
       "from": "THIRD_PARTY_NOTICES.md",
       "to": "THIRD_PARTY_NOTICES.md"
-    },
-    {
-      "from": "docs",
-      "to": "docs",
-      "filter": [
-        "**/*.md",
-        "licenses/*.txt"
-      ]
     }
   ],
   "asar": true,

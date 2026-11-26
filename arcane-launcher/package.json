@@ -1,8 +1,8 @@
 {
   "name": "shenbcl-launcher",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "private": true,
-  "description": "shenBCL 启动器 · Your world. Your rules.",
+  "description": "shenBCL 启动器 · 独立第三方 Minecraft Java 版启动器",
   "author": "shenBCL contributors",
   "license": "UNLICENSED",
   "type": "module",
