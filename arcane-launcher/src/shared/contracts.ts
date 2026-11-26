@@ -47,7 +47,6 @@ export interface LauncherSettings {
   roots: string[];
   javaPath: string;
   memoryMb: number;
-  playerName: string;
   closeOnLaunch: boolean;
 }
 
@@ -149,7 +148,6 @@ export interface AppBridge {
   onModpackJob(callback: (job: ModpackJob) => void): () => void;
   onModpackInstalled(callback: (result: ModpackInstallResult) => void): () => void;
   account(): Promise<AccountState>;
-  configureAccount(clientId: string): Promise<AccountState>;
   beginMicrosoftLogin(): Promise<AccountState>;
   cancelMicrosoftLogin(): Promise<AccountState>;
   openMicrosoftLogin(): Promise<void>;

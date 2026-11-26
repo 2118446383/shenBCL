@@ -1,7 +1,7 @@
 import type { AccountState } from './contracts';
 
 export interface AccountPresentation {
-  kind: 'microsoft' | 'offline';
+  kind: 'microsoft' | 'signed-out';
   verified: boolean;
   label: string;
   description: string;
@@ -15,11 +15,11 @@ export function accountPresentation(account: AccountState): AccountPresentation 
     description: '已验证 Minecraft Java 版所有权与角色资料，使用正版身份启动游戏。',
   };
   if (account.status === 'refreshing') return {
-    kind: account.profile ? 'microsoft' : 'offline', verified: false, label: 'Microsoft · 正在验证',
+    kind: account.profile ? 'microsoft' : 'signed-out', verified: false, label: 'Microsoft · 正在验证',
     description: '正在恢复 Microsoft 登录并验证 Minecraft 角色，完成后可使用正版身份。',
   };
   if (account.status === 'authorizing') return {
-    kind: account.profile ? 'microsoft' : 'offline', verified: false, label: '正在登录 Microsoft',
+    kind: account.profile ? 'microsoft' : 'signed-out', verified: false, label: '正在登录 Microsoft',
     description: '等待 Microsoft 授权与游戏所有权验证，尚未建立新的正版登录。',
   };
   if (account.profile && account.status === 'reauthentication-required') return {
@@ -28,10 +28,10 @@ export function accountPresentation(account: AccountState): AccountPresentation 
   };
   if (account.profile) return {
     kind: 'microsoft', verified: false, label: '缓存账号 · 未在线验证',
-    description: '当前仅显示缓存角色，尚未验证本次登录。启动前会重新验证，不会自动切换为离线身份。',
+    description: '当前显示缓存角色。启动前会重新验证账号和游戏所有权。',
   };
   return {
-    kind: 'offline', verified: false, label: '离线账号',
-    description: '当前使用本地玩家名启动；连接拥有 Minecraft Java 版的 Microsoft 账号后可切换为正版身份。',
+    kind: 'signed-out', verified: false, label: '未登录',
+    description: '请连接拥有 Minecraft Java 版的 Microsoft 账号。',
   };
 }
