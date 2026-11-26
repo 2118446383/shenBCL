@@ -7,6 +7,10 @@ import { directories, exists, stableId } from './filesystem';
 
 const execFileAsync = promisify(execFile);
 
+export function cleanJavaEnvironment(): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(?:JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS)$/i.test(key)));
+}
+
 export function parseJavaVersion(output: string): { version: string; major: number; vendor: string; architecture: string } | undefined {
   const version = /^\s*java\.version\s*=\s*(\S+)/m.exec(output)?.[1]
     || /(?:openjdk|java)\s+(?:version\s+)?"?([\d][\w.+_-]*)/i.exec(output)?.[1];
@@ -24,7 +28,7 @@ export async function probeJava(executable: string, source = '自定义'): Promi
   try {
     const resolved = await realpath(executable);
     const { stdout, stderr } = await execFileAsync(resolved, ['-XshowSettings:properties', '-version'], {
-      windowsHide: true, timeout: 5000, maxBuffer: 128 * 1024, encoding: 'utf8', shell: false,
+      env: cleanJavaEnvironment(), windowsHide: true, timeout: 5000, maxBuffer: 128 * 1024, encoding: 'utf8', shell: false,
     });
     const output = `${stdout}\n${stderr}`;
     const parsed = parseJavaVersion(output);

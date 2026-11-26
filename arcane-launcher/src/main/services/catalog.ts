@@ -122,7 +122,7 @@ export class CatalogService {
   private vanilla?: { expiresAt: number; items: CatalogMinecraftVersion[] };
   constructor(options: CatalogOptions = {}) {
     this.request = options.fetch ?? fetch;
-    this.userAgent = options.userAgent ?? 'shenBCL/0.3.6 (Minecraft Java launcher)';
+    this.userAgent = options.userAgent ?? 'shenBCL/0.3.7 (Minecraft Java launcher)';
   }
   private async json(url: string, signal?: AbortSignal): Promise<any> {
     signal?.throwIfAborted();

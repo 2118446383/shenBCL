@@ -1,7 +1,6 @@
-import { validateClientId, validateSkinPng } from './account';
+import { validateSkinPng } from './account';
 
 export interface AccountPreferences {
-  clientId: string;
   localSkin?: string;
 }
 
@@ -10,18 +9,13 @@ const MAX_SKIN_DATA_LENGTH = 1_400_000;
 
 /** Local JSON preferences are untrusted input; malformed fields must not prevent startup. */
 export function sanitizeAccountPreferences(value: unknown): AccountPreferences {
-  const preferences: AccountPreferences = { clientId: '' };
+  const preferences: AccountPreferences = {};
   try {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return preferences;
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) return preferences;
 
     // Read only own data fields, without invoking accessors or trusting inherited values.
-    const clientId = Object.getOwnPropertyDescriptor(value, 'clientId')?.value;
-    if (typeof clientId === 'string') {
-      try { preferences.clientId = validateClientId(clientId); }
-      catch { /* Fall back to the application's configured identity. */ }
-    }
     const skin = Object.getOwnPropertyDescriptor(value, 'localSkin')?.value;
     if (typeof skin !== 'string' || skin.length > MAX_SKIN_DATA_LENGTH || !skin.startsWith(PNG_PREFIX)) return preferences;
     const encoded = skin.slice(PNG_PREFIX.length);
@@ -29,7 +23,7 @@ export function sanitizeAccountPreferences(value: unknown): AccountPreferences {
     const bytes = Buffer.from(encoded, 'base64');
     if (bytes.toString('base64') !== encoded) return preferences;
     try { validateSkinPng(bytes); preferences.localSkin = skin; }
-    catch { /* Retain the account ID while discarding a corrupt local preview. */ }
+    catch { /* Discard a corrupt local preview. */ }
   } catch { /* Unexpected object shapes, including proxy traps, are treated as empty preferences. */ }
   return preferences;
 }

@@ -1,22 +1,45 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import type { LaunchOption } from '@xmcl/core';
 import type { JavaInstallation, LauncherInstance, LauncherSettings, LaunchPlan } from '../../shared/contracts';
 import { exists, isWithin, readJson, readText, safeChild, safeVersionId } from './filesystem';
 import { inspectClientResources, javaRequirement, readVersionChain } from './instances';
-import { probeJava } from './java';
+import { cleanJavaEnvironment, probeJava } from './java';
 import { redactSensitiveText } from './logs';
-import type { GameIdentity } from './account';
+import { assertGameIdentity, type GameIdentity } from './account';
 import { DEFAULT_GAME_WINDOW, prepareGameWindow, withoutWindowArguments, type GameWindowSize } from './game-window';
 import { pruneInstanceLogArchives } from './log-retention';
 
-function offlineId(name: string): string {
-  const bytes = createHash('md5').update(`OfflinePlayer:${name}`, 'utf8').digest();
-  bytes[6] = (bytes[6] & 0x0f) | 0x30;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  return bytes.toString('hex');
+const alternateAuth = /authlib[-_.]?injector|yggdrasil[-_.]?connect|ely\.by|--(?:authserver|auth-server|sessionserver|session-server|offline(?:-mode)?|demo)(?:[\s="']|$)|-Dminecraft\.(?:api\.|auth\.|session\.|services\.)|-Dauthlib(?:[.=]|$)|-Dcom\.mojang\.authlib\.|-(?:javaagent|agentlib|agentpath|Xrun)(?:[:=]|$)/i;
+
+function verifyLaunchArguments(args: readonly string[], identity: GameIdentity): void {
+  if (args.some(arg => alternateAuth.test(arg) || arg.startsWith('@'))) throw new Error('此实例的启动参数包含认证覆盖、Java 代理或额外参数文件。请重新安装标准版本。');
+  const expected = new Map([
+    ['--username', identity.name], ['--uuid', identity.id], ['--accessToken', identity.accessToken], ['--session', identity.accessToken],
+    ['--userType', 'msa'], ['--clientId', identity.clientId], ['--xuid', identity.xuid],
+  ]);
+  const seen = new Set<string>();
+  for (const [index, argument] of args.entries()) {
+    const equals = argument.indexOf('=');
+    const flag = equals < 0 ? argument : argument.slice(0, equals);
+    if (!expected.has(flag)) continue;
+    const value = equals < 0 ? args[index + 1] : argument.slice(equals + 1);
+    if (seen.has(flag) || value !== expected.get(flag)) throw new Error('此实例覆盖了 Minecraft 登录参数。请重新安装标准版本。');
+    seen.add(flag);
+  }
+  if (!seen.has('--username') || (!seen.has('--accessToken') && !seen.has('--session'))) throw new Error('此版本没有可用的正版会话启动参数。');
+}
+
+async function requireOnlineServer(instance: LauncherInstance): Promise<void> {
+  const properties = await readText(path.join(instance.gameDirectory, 'server.properties'), 256 * 1024).catch(() => { throw new Error('请确认服务端目录中存在可读取的 server.properties。'); });
+  const lines = properties.split(/\r\n|\n|\r/).map(line => line.replace(/^[ \t\f]+/, '')).filter(line => line && !/^[#!]/.test(line));
+  // Reject escaped property keys and continued lines so Java cannot read a hidden second setting.
+  if (lines.some(line => /^(?:[^\s:=\\]*\\)|(?:^|[^\\])(?:\\\\)*\\$/.test(line))) throw new Error('请移除 server.properties 中的转义键或续行，再启用正版验证。');
+  const mode = lines.filter(line => /^online-mode(?:[\t\f :=]|$)/.test(line));
+  if (mode.length !== 1 || !/^online-mode[ \t\f]*(?:[=:][ \t\f]*|[ \t\f]+)true$/i.test(mode[0])) {
+    throw new Error('请在 server.properties 中设置唯一的 online-mode=true，再启动服务端。');
+  }
 }
 
 function commandPreview(executable: string, args: string[]): string {
@@ -61,9 +84,8 @@ async function validateAssets(root: string, indexId: string | undefined): Promis
   if (missing) throw new Error(`缺少 ${missing} 个游戏资源文件。请先使用原启动器补全这个实例，再重新扫描。`);
 }
 
-async function clientOptions(instance: LauncherInstance, settings: LauncherSettings, java: JavaInstallation, identity?: GameIdentity, windowSize: GameWindowSize = DEFAULT_GAME_WINDOW): Promise<LaunchOption> {
+async function clientOptions(instance: LauncherInstance, settings: LauncherSettings, java: JavaInstallation, identity: GameIdentity, windowSize: GameWindowSize = DEFAULT_GAME_WINDOW): Promise<LaunchOption> {
   if (!instance.versionId || !safeVersionId(instance.versionId)) throw new Error('这个目录还没有可启动的客户端版本。请导入完整 Minecraft 目录。');
-  if (!/^[A-Za-z0-9_]{3,16}$/.test(settings.playerName)) throw new Error('本地玩家名应为 3–16 位英文字母、数字或下划线。');
   const quickIssues = await inspectClientResources(instance.path, instance.versionId);
   if (quickIssues.length) throw new Error(quickIssues.join('；'));
   const chain = await readVersionChain(instance.path, instance.versionId);
@@ -83,16 +105,15 @@ async function clientOptions(instance: LauncherInstance, settings: LauncherSetti
     javaPath: java.path,
     minMemory: Math.min(1024, settings.memoryMb),
     maxMemory: settings.memoryMb,
-    gameProfile: identity ? { name: identity.name, id: identity.id } : { name: settings.playerName, id: offlineId(settings.playerName) },
-    accessToken: identity?.accessToken ?? '0',
-    // XMCL 2.16 defaults to msa; its older type declaration only lists legacy/mojang.
-    userType: identity ? undefined : 'legacy',
-    features: { account: { clientid: identity?.clientId ?? '', auth_xuid: identity?.xuid ?? '' } },
+    gameProfile: { name: identity.name, id: identity.id },
+    accessToken: identity.accessToken,
+    // XMCL defaults to msa; its type declaration only lists legacy/mojang.
+    features: { account: { clientid: identity.clientId, auth_xuid: identity.xuid } },
     resolution: { width: windowSize.width, height: windowSize.height, fullscreen: false },
     launcherName: 'shenBCL',
-    launcherBrand: '0.3.6',
+    launcherBrand: '0.3.7',
     extraJVMArgs: ['-XX:+UseG1GC'],
-    extraExecOption: { cwd: instance.gameDirectory, windowsHide: true, shell: false, stdio: 'pipe' },
+    extraExecOption: { cwd: instance.gameDirectory, env: cleanJavaEnvironment(), windowsHide: true, shell: false, stdio: 'pipe' },
   };
 }
 
@@ -105,7 +126,7 @@ async function serverArguments(instance: LauncherInstance, settings: LauncherSet
   const eula = await readText(path.join(instance.path, 'eula.txt')).catch(() => '');
   if (!/^\s*eula\s*=\s*true\s*$/im.test(eula)) throw new Error('请先阅读服务端 EULA，并在 eula.txt 中自行确认同意。');
   const argsText = await readText(instance.serverArgumentsFile).catch(() => { throw new Error('缺少 Forge 服务端 libraries 运行依赖，请导入完整服务端包。'); });
-  if (/(?:^|\s)@[^\s]+/m.test(argsText)) throw new Error('服务端参数包含嵌套参数文件，首版暂不支持。');
+  if (alternateAuth.test(argsText) || /(?:^|[\s"'])@[^\s]+/m.test(argsText)) throw new Error('服务端参数包含认证覆盖、Java 代理或嵌套参数文件。');
   const referencedLibraries = [...new Set(argsText.match(/libraries[\\/][^\s;"']+\.jar/gi) || [])];
   if (!referencedLibraries.length || !/bootstraplauncher\.BootstrapLauncher|forge.*server|forgeserver/i.test(argsText)) {
     throw new Error('服务端参数不完整，无法识别 Forge 服务端入口。');
@@ -118,38 +139,47 @@ async function serverArguments(instance: LauncherInstance, settings: LauncherSet
   return [`-Xms${Math.min(1024, settings.memoryMb)}M`, `-Xmx${settings.memoryMb}M`, `@${instance.serverArgumentsFile}`, 'nogui'];
 }
 
-/** Generate a reviewed launch command. Does not spawn Java or change game files. */
+/** Generate a redacted launch command without starting the game. */
 export async function prepareLaunch(instance: LauncherInstance, settings: LauncherSettings, installedJava: JavaInstallation[], identity?: GameIdentity, windowSize?: GameWindowSize): Promise<LaunchPlan> {
+  assertGameIdentity(identity);
   validateMemory(settings.memoryMb);
   const java = await selectJava(instance, settings, installedJava);
   let args: string[];
-  const warnings: string[] = [];
   if (instance.kind === 'server') {
+    await requireOnlineServer(instance);
     args = await serverArguments(instance, settings);
   } else {
     const { generateArguments } = await import('@xmcl/core');
     const fullCommand = await generateArguments(await clientOptions(instance, settings, java, identity, windowSize));
     args = fullCommand.slice(1);
-    if (!identity) warnings.push('当前使用本地玩家身份。连接 Microsoft 账号后可使用正版身份启动。');
+    verifyLaunchArguments(args, identity);
   }
-  if (identity) args = args.map(arg => arg.replaceAll(identity.accessToken, '[已隐藏]'));
+  assertGameIdentity(identity);
+  args = args.map(arg => redactSensitiveText(arg.replaceAll(identity.accessToken, '[已隐藏]')));
   return { instanceId: instance.id, executable: java.path, args, cwd: instance.gameDirectory,
-    displayCommand: commandPreview(java.path, args), warnings, kind: instance.kind };
+    displayCommand: commandPreview(java.path, args), warnings: [], kind: instance.kind };
 }
 
-/** Only call after the user explicitly presses Launch. Returns the process for main-process event handling. */
+/** Only call after the user explicitly presses Launch. */
 export async function launchInstance(instance: LauncherInstance, settings: LauncherSettings, installedJava: JavaInstallation[], identity?: GameIdentity, windowSize?: GameWindowSize): Promise<ChildProcess> {
+  assertGameIdentity(identity);
   validateMemory(settings.memoryMb);
   const java = await selectJava(instance, settings, installedJava);
   if (instance.kind === 'server') {
-    const args = await serverArguments(instance, settings);
     await pruneInstanceLogArchives(instance.gameDirectory);
-    return spawn(java.path, args, { cwd: instance.gameDirectory, windowsHide: true, shell: false, stdio: 'pipe' });
+    const args = await serverArguments(instance, settings);
+    await requireOnlineServer(instance);
+    assertGameIdentity(identity);
+    return spawn(java.path, args, { cwd: instance.gameDirectory, env: cleanJavaEnvironment(), windowsHide: true, shell: false, stdio: 'pipe' });
   }
   const { launch } = await import('@xmcl/core');
   const options = await clientOptions(instance, settings, java, identity, windowSize);
   await prepareGameWindow(instance.gameDirectory);
   await pruneInstanceLogArchives(instance.gameDirectory);
-  // XMCL validates hashes and extracts native libraries at the actual launch step.
-  return launch(options);
+  return launch({ ...options, spawn: (executable, args, execOptions) => {
+    assertGameIdentity(identity);
+    if (!args) throw new Error('无法读取游戏启动参数。');
+    verifyLaunchArguments(args, identity);
+    return spawn(executable, args, execOptions ?? {});
+  } });
 }

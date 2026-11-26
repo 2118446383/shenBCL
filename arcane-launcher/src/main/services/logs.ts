@@ -1,23 +1,48 @@
 import { constants, type Stats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
 import type { InstanceLog, LauncherInstance } from '../../shared/contracts';
 
-const sensitiveKey = '(?:--)?(?:access[_-]?token|refresh[_-]?token|client[_-]?token|id[_-]?token|identity[_-]?token|session[_-]?token|xsts[_-]?token|xbox[_-]?token|device[_-]?code|client[_-]?secret|rps[_-]?ticket|api[_-]?key|authorization|password|passwd|token)';
+const sensitiveKey = '(?:--)?(?:access[_-]?token|refresh[_-]?token|client[_-]?token|id[_-]?token|identity[_-]?token|--session|session[_-]?token|xsts[_-]?token|xbox[_-]?token|device[_-]?code|user[_-]?code|verification[_-]?code|recovery[_-]?code|set-cookie|cookie|client[_-]?secret|rps[_-]?ticket|api[_-]?key|authorization|password|passwd|token)';
 const quotedSecret = new RegExp(`(${sensitiveKey}(?:["']?\\s*[:=]\\s*|\\s+))(["'])(.*?)\\2`, 'gi');
-const unquotedSecret = new RegExp(`(${sensitiveKey}(?:["']?\\s*[:=]\\s*|\\s+)(?:Bearer\\s+)?)(?!["'])[^\\s,"'\\]}]+`, 'gi');
+const unquotedSecret = new RegExp(`(${sensitiveKey}(?:["']?\\s*[:=]\\s*|\\s+)(?:Bearer\\s+)?)(?!["']|\\[已隐藏\\])[^\\s,"'\\]}]+`, 'gi');
 
 /** Keep game logs local and remove common credentials before exposing them to the UI. */
 export function redactSensitiveText(input: string): string {
   return input
     .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .replace(/(^|\r?\n)(\s*(?:set-cookie|cookie)\s*:\s*)[^\r\n]+/gi, '$1$2[已隐藏]')
     .replace(quotedSecret, '$1$2[已隐藏]$2')
     .replace(/(\bauthorization["']?\s*[:=]\s*)XBL3\.0\s+x=[^\s,"'\]}]+/gi, '$1[已隐藏]')
     .replace(/\bXBL3\.0\s+x=[^\s,"'\]}]+/gi, 'XBL3.0 [已隐藏]')
     .replace(unquotedSecret, '$1[已隐藏]')
     .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [已隐藏]')
     .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[已隐藏的令牌]');
+}
+
+/** Decode complete child-process lines so a credential split across chunks is still hidden. */
+export function forwardLaunchOutput(stream: Readable | null, token: string, emit: (message: string) => void): void {
+  if (!stream) return;
+  let buffered = '';
+  let discard = false;
+  const publish = () => {
+    if (discard) emit('[日志行超过长度限制]');
+    else if (buffered) emit(redactSensitiveText(buffered.replaceAll(token, '[已隐藏]')));
+    buffered = '';
+    discard = false;
+  };
+  stream.setEncoding('utf8');
+  stream.on('data', (chunk: string) => {
+    const lines = chunk.split('\n');
+    for (const [index, line] of lines.entries()) {
+      if (buffered.length + line.length > 64 * 1024) discard = true;
+      if (!discard) buffered += line;
+      if (index < lines.length - 1) publish();
+    }
+  });
+  stream.once('end', publish);
 }
 
 function samePath(first: string, second: string): boolean {
