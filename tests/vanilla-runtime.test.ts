@@ -74,7 +74,7 @@ test('hash failures preserve existing files and remove temporary downloads', asy
     const runtime = createVanillaRuntime({}, async () => { requests++; return new Response('evil'); });
     await assert.rejects(runtime.download([target]), AggregateError);
     await assert.rejects(runtime.download([target]), AggregateError);
-    assert.equal(requests, 2, 'each official/mirror source is tried only once after an integrity error');
+    assert.equal(requests, 1, 'the runtime does not repeat a known integrity failure');
     assert.equal(await readFile(target.path, 'utf8'), 'old!');
     assert.deepEqual(await readdir(root), ['asset.dat']);
   });
@@ -92,7 +92,7 @@ test('temporary HTTP statuses retry at most three times and honor a bounded Retr
       const target = file(root, 'asset.dat', 'good');
       await runtime.download([target]);
       assert.equal(requests, 3);
-      assert.deepEqual(delays, [5000]);
+      assert.deepEqual(delays, [5000, 5000]);
       assert.equal(await readFile(target.path, 'utf8'), 'good');
     });
   }
@@ -137,7 +137,7 @@ test('SDK retries do not multiply exhausted network budgets or retry permanent a
       let requests = 0;
       const runtime = createVanillaRuntime({}, async () => { requests++; return scenario.response(); }, { wait: async () => {} });
       await assert.rejects(executeInstallManifest({ schemaVersion: 1, tasks: [{ id: scenario.name, type: 'files', files: [file(root, 'asset.dat', 'good')] }] }, runtime, { attempts: 3, retryBaseDelay: 0, wait: async () => {} }));
-      assert.equal(requests, scenario.expected * 2, `${scenario.name}: separate official and mirror budgets`);
+      assert.equal(requests, scenario.expected, `${scenario.name}: official source retry budget`);
       assert.deepEqual(await readdir(root), []);
     });
   }
@@ -149,7 +149,7 @@ test('cancellation during retry delay stops before making another request', asyn
     let requests = 0;
     const runtime = createVanillaRuntime({ signal: controller.signal }, async () => { requests++; return new Response('temporary', { status: 503 }); }, { wait: async (_delay, signal) => { assert.equal(signal, controller.signal); controller.abort(); } });
     await assert.rejects(runtime.download([file(root, 'asset.dat', 'good')]), error => error instanceof Error && error.name === 'AbortError');
-    assert.equal(requests, 2, 'official and mirror stop before the retry delay completes');
+    assert.equal(requests, 1, 'cancellation stops before the retry delay completes');
     assert.deepEqual(await readdir(root), []);
   });
 });

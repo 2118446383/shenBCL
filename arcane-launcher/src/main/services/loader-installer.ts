@@ -19,7 +19,7 @@ import {
   type JavaCommand,
   type NodeInstallRuntimeOptions,
 } from '@xmcl/installer';
-import { probeJava } from './java';
+import { cleanJavaEnvironment, probeJava } from './java';
 import { inspectClientResources, javaRequirement, neoForgeMetadataVersions } from './instances';
 import { requireSuccessfulDownload, withNetworkRetry, type NetworkRetryOptions } from './vanilla-runtime';
 import { fetchFromSources, getDownloadSource, resolveDownloadSources, validateDownloadUrl } from './download-sources';
@@ -174,7 +174,7 @@ async function safeFetch(request: typeof fetch, url: string, init: RequestInit, 
 function runProcessor(command: JavaCommand, root: string, signal?: AbortSignal): Promise<void> {
   cancelled(signal);
   return new Promise((resolve, reject) => {
-    const child = spawn(command.executable, command.args, { cwd: root, windowsHide: true, shell: false, stdio: ['ignore', 'ignore', 'pipe'], signal, timeout: 10 * 60_000 });
+    const child = spawn(command.executable, command.args, { cwd: root, env: cleanJavaEnvironment(), windowsHide: true, shell: false, stdio: ['ignore', 'ignore', 'pipe'], signal, timeout: 10 * 60_000 });
     let stderr = '';
     child.stderr?.on('data', chunk => { stderr = (stderr + String(chunk)).slice(-8192); });
     child.once('error', reject);

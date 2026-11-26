@@ -4,9 +4,6 @@ import { BMCLAPI_ORIGIN, fetchFromSources, getDownloadSource, MCIM_ORIGIN, resol
 
 test('documented source mappings preserve exact artifact paths and catalog queries', () => {
   for (const [url, purpose, mirror] of [
-    ['https://piston-meta.mojang.com/mc/game/version_manifest_v2.json', 'vanilla-metadata', `${BMCLAPI_ORIGIN}/mc/game/version_manifest_v2.json`],
-    ['https://libraries.minecraft.net/org/example/library/1/library-1.jar', 'library', `${BMCLAPI_ORIGIN}/maven/org/example/library/1/library-1.jar`],
-    ['https://resources.download.minecraft.net/ab/abcdef', 'asset', `${BMCLAPI_ORIGIN}/assets/ab/abcdef`],
     ['https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.262/neoforge-21.1.262.module', 'neoforge', `${BMCLAPI_ORIGIN}/maven/net/neoforged/neoforge/21.1.262/neoforge-21.1.262.module`],
     ['https://cdn.modrinth.com/data/project/versions/version/mod.jar', 'modpack', `${MCIM_ORIGIN}/data/project/versions/version/mod.jar`],
     ['https://mediafilez.forgecdn.net/files/1234/567/mod.jar', 'modpack', `${MCIM_ORIGIN}/files/1234/567/mod.jar`],
@@ -20,18 +17,30 @@ test('initial addresses reject unsafe schemes, arbitrary hosts, credentials and 
 });
 
 test('a slow origin starts its mirror after a bounded delay and aborts the losing connection', async () => {
-  const original = 'https://resources.download.minecraft.net/ab/abcdef';
+  const original = 'https://cdn.modrinth.com/data/p/versions/v/a.jar';
   const requests: string[] = [];
   let originAborted = false;
-  const response = await fetchFromSources(original, { purpose: 'asset', hedgeDelayMs: 5, request: async (input, init) => {
+  const response = await fetchFromSources(original, { purpose: 'modpack', hedgeDelayMs: 5, request: async (input, init) => {
     requests.push(String(input));
     if (String(input) === original) return new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => { originAborted = true; reject(init.signal?.reason); }, { once: true }));
     return new Response('verified later by consumer');
   } });
   assert.equal(await response.text(), 'verified later by consumer');
-  assert.deepEqual(requests, resolveDownloadSources(original, 'asset'));
+  assert.deepEqual(requests, resolveDownloadSources(original, 'modpack'));
   assert.equal(originAborted, true);
-  assert.equal(getDownloadSource(response), `${BMCLAPI_ORIGIN}/assets/ab/abcdef`);
+  assert.equal(getDownloadSource(response), MCIM_ORIGIN + '/data/p/versions/v/a.jar');
+});
+
+test('Minecraft vanilla metadata, game files, assets and libraries only use Mojang origins', () => {
+  for (const [url, purpose, mirror] of [
+    ['https://piston-meta.mojang.com/mc/game/version_manifest_v2.json', 'vanilla-metadata', '/mc/game/version_manifest_v2.json'],
+    ['https://piston-data.mojang.com/v1/objects/fixture/client.jar', 'vanilla-metadata', '/v1/objects/fixture/client.jar'],
+    ['https://libraries.minecraft.net/org/example/library/1/library-1.jar', 'library', '/maven/org/example/library/1/library-1.jar'],
+    ['https://resources.download.minecraft.net/ab/abcdef', 'asset', '/assets/ab/abcdef'],
+  ] as const) {
+    assert.deepEqual(resolveDownloadSources(url, purpose), [url]);
+    assert.throws(() => validateDownloadUrl(BMCLAPI_ORIGIN + mirror, purpose));
+  }
 });
 
 test('an HTTP failure starts the next source immediately and retains diagnostics when all fail', async () => {
@@ -64,27 +73,27 @@ test('unsafe redirects are rejected for every source without requesting their de
   await assert.rejects(fetchFromSources('https://libraries.minecraft.net/fixture.jar', { purpose: 'library', request: async input => {
     requests.push(String(input)); return new Response(null, { status: 302, headers: { location: 'https://127.0.0.1/private' } });
   } }), /不安全|受信任/);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 1);
   assert.ok(requests.every(url => !url.includes('127.0.0.1')));
 });
 
 test('BMCLAPI may delegate documented education mirrors and signed public download nodes', async () => {
   for (const target of ['https://mirror.nyist.edu.cn/bmclapi/net/example.jar', `https://node.example.net:8443/download/${'a'.repeat(40)}?s=signature&e=expiry`]) {
     let redirected = false;
-    const response = await fetchFromSources(`${BMCLAPI_ORIGIN}/maven/net/example.jar`, { purpose: 'library', request: async input => {
+    const response = await fetchFromSources(`${BMCLAPI_ORIGIN}/maven/net/neoforged/a.jar`, { purpose: 'neoforge', request: async input => {
       if (String(input) === target) { redirected = true; return new Response('artifact'); }
       return new Response(null, { status: 302, headers: { location: target } });
     } });
     assert.equal(await response.text(), 'artifact');
     assert.equal(redirected, true);
   }
-  await assert.rejects(fetchFromSources(`${BMCLAPI_ORIGIN}/maven/net/example.jar`, { purpose: 'library', request: async () => new Response(null, { status: 302, headers: { location: 'https://node.example.net/arbitrary' } }) }), /受信任/);
+  await assert.rejects(fetchFromSources(`${BMCLAPI_ORIGIN}/maven/net/neoforged/a.jar`, { purpose: 'neoforge', request: async () => new Response(null, { status: 302, headers: { location: 'https://node.example.net/arbitrary' } }) }), /受信任/);
 });
 
 test('caller cancellation aborts every active source and no response is published', async () => {
   const controller = new AbortController();
   let requests = 0;
-  const result = fetchFromSources('https://resources.download.minecraft.net/ab/abcdef', { purpose: 'asset', signal: controller.signal, hedgeDelayMs: 0, request: async (_input, init) => {
+  const result = fetchFromSources('https://cdn.modrinth.com/data/p/versions/v/a.jar', { purpose: 'modpack', signal: controller.signal, hedgeDelayMs: 0, request: async (_input, init) => {
     requests++;
     if (requests === 2) queueMicrotask(() => controller.abort());
     return new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true }));

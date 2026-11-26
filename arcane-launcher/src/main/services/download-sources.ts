@@ -8,7 +8,7 @@ const VANILLA_HOSTS = new Set(['piston-meta.mojang.com', 'piston-data.mojang.com
 const LOADER_HOSTS = new Set([...VANILLA_HOSTS, 'maven.neoforged.net', 'maven.minecraftforge.net', 'repo.maven.apache.org', 'repo1.maven.org']);
 const MOD_HOSTS = new Set(['cdn.modrinth.com', 'edge.forgecdn.net', 'mediafilez.forgecdn.net', 'media.forgecdn.net']);
 const CATALOG_HOSTS = new Set(['api.modrinth.com']);
-const BMCL_PATHS = /^\/(?:mc\/|v1\/|packages\/|objects\/|assets\/|maven\/|neoforge\/)/;
+const BMCL_LOADER_PATHS = /^\/maven\/(?:net\/minecraftforge|net\/neoforged)\//;
 const MCIM_CATALOG_PATHS = /^\/modrinth\/v2\/(?:search(?:\?|$)|project\/|version\/|tag\/)/;
 const EDUCATION_MIRRORS = new Set(['mirrors.cernet.edu.cn', 'mirrors.ustc.edu.cn', 'mirror.nju.edu.cn', 'mirrors.nju.edu.cn', 'mirror.lzu.edu.cn', 'mirrors.qlu.edu.cn', 'mirrors.cqu.edu.cn', 'mirror.nyist.edu.cn', 'mirrors.hit.edu.cn', 'mirrors.ha.edu.cn']);
 const responseSources = new WeakMap<Response, string>();
@@ -22,7 +22,7 @@ function parsedUrl(value: string): URL {
 export function validateDownloadUrl(value: string, purpose: DownloadPurpose): string {
   const url = parsedUrl(value);
   const hosts = purpose === 'catalog' ? CATALOG_HOSTS : purpose === 'modpack' ? MOD_HOSTS : purpose === 'neoforge' || purpose === 'library' ? LOADER_HOSTS : VANILLA_HOSTS;
-  const mirror = url.origin === BMCLAPI_ORIGIN && purpose !== 'modpack' && purpose !== 'catalog' && BMCL_PATHS.test(url.pathname)
+  const mirror = url.origin === BMCLAPI_ORIGIN && purpose === 'neoforge' && BMCL_LOADER_PATHS.test(url.pathname)
     || url.origin === MCIM_ORIGIN && (purpose === 'modpack' && /^\/(?:data|files)\//.test(url.pathname) || purpose === 'catalog' && MCIM_CATALOG_PATHS.test(url.pathname + url.search));
   if (!hosts.has(url.hostname) && !mirror) throw new Error('下载清单包含不受信任的来源。');
   return url.href;
@@ -35,10 +35,8 @@ export function resolveDownloadSources(value: string, purpose: DownloadPurpose):
   let mirror: string | undefined;
   if (purpose === 'catalog' && url.hostname === 'api.modrinth.com') mirror = `${MCIM_ORIGIN}/modrinth${url.pathname}${url.search}`;
   else if (purpose === 'modpack' && MOD_HOSTS.has(url.hostname)) mirror = `${MCIM_ORIGIN}${url.pathname}${url.search}`;
-  else if (url.hostname === 'resources.download.minecraft.net') mirror = `${BMCLAPI_ORIGIN}/assets${url.pathname}${url.search}`;
-  else if (url.hostname === 'libraries.minecraft.net' || url.hostname === 'maven.minecraftforge.net') mirror = `${BMCLAPI_ORIGIN}/maven${url.pathname}${url.search}`;
-  else if (url.hostname === 'maven.neoforged.net' && url.pathname.startsWith('/releases/')) mirror = `${BMCLAPI_ORIGIN}/maven/${url.pathname.slice('/releases/'.length)}${url.search}`;
-  else if (VANILLA_HOSTS.has(url.hostname)) mirror = `${BMCLAPI_ORIGIN}${url.pathname}${url.search}`;
+  else if (purpose === 'neoforge' && url.hostname === 'maven.minecraftforge.net' && url.pathname.startsWith('/net/minecraftforge/')) mirror = BMCLAPI_ORIGIN + '/maven' + url.pathname + url.search;
+  else if (purpose === 'neoforge' && url.hostname === 'maven.neoforged.net' && url.pathname.startsWith('/releases/net/neoforged/')) mirror = BMCLAPI_ORIGIN + '/maven/' + url.pathname.slice('/releases/'.length) + url.search;
   return [...new Set([official, ...(mirror ? [validateDownloadUrl(mirror, purpose)] : [])])];
 }
 

@@ -9,7 +9,7 @@ const SkinPreview = defineAsyncComponent(() => import('./SkinPreview.vue'))
 const props = defineProps<{ snapshot: LauncherSnapshot; selected?: LauncherInstance; runtime: RuntimeInfo; java?: JavaInstallation; account: AccountState; loading: boolean; busy: boolean; running: Set<string>; installing: boolean }>()
 const emit = defineEmits<{ launch: []; check: []; folder: []; import: []; create: []; account: []; settings: []; instances: []; diagnostics: []; screenshots: []; backup: []; select: [instance: LauncherInstance]; refresh: []; stop: []; tasks: [] }>()
 
-const name = computed(() => props.account.profile?.name ?? props.snapshot.settings.playerName)
+const name = computed(() => props.account.profile?.name ?? '未登录')
 const identity = computed(() => accountPresentation(props.account))
 const accountVerified = computed(() => identity.value.verified)
 const accountLabel = computed(() => identity.value.label)
@@ -79,7 +79,7 @@ const label = (item: LauncherInstance) => props.running.has(item.id) ? '运行�
         </div>
         <button v-if="selected" class="dock-folder icon-button" aria-label="打开当前实例目录" @click="emit('folder')"><FolderOpen :size="16" /></button>
         <button v-if="isRunning" class="button button-primary launch-button launch-button-stop" @click="emit('stop')"><Square :size="17" /><span>停止运行</span></button>
-        <button v-else class="button button-primary launch-button" :disabled="loading || busy" @click="installing ? emit('tasks') : needsCheck ? emit('check') : emit('launch')"><LoaderCircle v-if="loading || busy || installing" :size="20" class="spin" /><Play v-else :size="20" fill="currentColor" /><span>{{ installing ? '查看安装进度' : selected ? needsCheck ? '检查并启动' : selected.kind === 'server' ? '启动服务器' : '启动游戏' : '安装游戏' }}</span><ArrowUpRight :size="18" /></button>
+        <button v-else class="button button-primary launch-button" :disabled="loading || busy" @click="installing ? emit('tasks') : needsCheck ? emit('check') : emit('launch')"><LoaderCircle v-if="loading || busy || installing" :size="20" class="spin" /><Play v-else :size="20" fill="currentColor" /><span>{{ installing ? '查看安装进度' : selected ? !account.profile || account.status === 'reauthentication-required' ? '登录后启动' : needsCheck ? '检查并启动' : selected.kind === 'server' ? '启动服务器' : '启动游戏' : '安装游戏' }}</span><ArrowUpRight :size="18" /></button>
       </section>
 
       <div class="runtime-strip">
@@ -106,9 +106,9 @@ const label = (item: LauncherInstance) => props.running.has(item.id) ? '运行�
       <section class="player-card panel">
         <div class="player-heading"><span>账号与皮肤</span></div>
         <button class="player-identity" @click="emit('account')"><span class="player-avatar"><UserRound :size="23" /></span><span><strong>{{ name }}</strong><small><span :class="['status-dot',{amber:!accountVerified}]"></span>{{ accountLabel }}</small></span><ArrowUpRight :size="16" /></button>
-        <SkinPreview :skin="account.profile?.skinDataUrl ?? (!account.profile ? account.localSkin : undefined)" :cape="account.profile?.capeDataUrl" :model="account.profile?.model" />
+        <SkinPreview :skin="account.profile?.skinDataUrl ?? (!account.profile ? account.localSkin : undefined)" :cape="accountVerified ? account.profile?.capeDataUrl : undefined" :model="account.profile?.model" />
         <div class="skin-note"><span class="signal-dot"></span>{{ accountSkinLabel }}</div>
-        <button class="account-connect" @click="emit('account')"><span class="microsoft-logo"><i></i><i></i><i></i><i></i></span>{{ accountVerified ? '管理账号与皮肤' : account.busy ? '查看登录进度' : account.profile ? '恢复 Microsoft 登录' : '连接 Microsoft 账号' }}<ArrowRight :size="15" /></button>
+        <button class="account-connect" @click="emit('account')"><UserRound :size="15" />{{ accountVerified ? '管理账号与皮肤' : account.busy ? '查看登录进度' : account.profile ? '恢复 Microsoft 登录' : '连接 Microsoft 账号' }}<ArrowRight :size="15" /></button>
       </section>
       <section class="ready-card startup-check" :class="{attention:needsCheck}">
         <div class="startup-heading"><TriangleAlert v-if="needsCheck" :size="18" /><ScanLine v-else :size="18" /><h3>启动检查</h3><span v-if="launchIssues.length">{{ launchIssues.length }} 项</span></div>

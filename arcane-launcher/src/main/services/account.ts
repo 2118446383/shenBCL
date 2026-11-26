@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import type { AccountState, PlayerProfile } from '../../shared/contracts';
+import { MICROSOFT_APPLICATION } from '../../shared/microsoft-app';
 
 const MS = 'https://login.microsoftonline.com/consumers/oauth2/v2.0';
 const MC = 'https://api.minecraftservices.com';
@@ -7,6 +8,13 @@ const scope = 'XboxLive.signin offline_access';
 const MAX_AUTH_JSON_BYTES = 1024 * 1024;
 const MAX_TOKEN_LENGTH = 32_768;
 export interface GameIdentity { id: string; name: string; accessToken: string; clientId: string; xuid: string }
+const issuedIdentities = new WeakMap<GameIdentity, () => boolean>();
+
+export function assertGameIdentity(identity: GameIdentity | undefined): asserts identity is GameIdentity {
+  if (!identity || identity.clientId !== MICROSOFT_APPLICATION.clientId || !issuedIdentities.get(identity)?.()) {
+    throw new Error('启动前请登录拥有 Minecraft Java 版的 Microsoft 账号，并完成在线验证。');
+  }
+}
 export interface StoredAccount {
   clientId: string;
   refreshToken: string;
@@ -110,14 +118,17 @@ export function textureUrl(value: unknown): string | undefined {
   if (typeof value !== 'string') return;
   try {
     const url = new URL(value);
-    if (url.protocol === 'https:' && url.hostname === 'textures.minecraft.net' && !url.port && !url.username && !url.password && /^\/texture\/[a-f\d]{32,64}$/i.test(url.pathname) && !url.search && !url.hash) return url.href;
+    if (!['https:', 'http:'].includes(url.protocol) || url.hostname !== 'textures.minecraft.net' || url.port || url.username || url.password || !/^\/texture\/[a-f\d]{32,64}$/i.test(url.pathname) || url.search || url.hash) return;
+    // Official profile metadata can still contain a legacy HTTP texture URL.
+    url.protocol = 'https:';
+    return url.href;
   } catch { /* Invalid service response. */ }
 }
 
 /** Tokens never cross IPC. The storage adapter encrypts this entire record using Electron safeStorage. */
 export class AccountService {
   private record: StoredAccount | null;
-  private clientId: string;
+  private readonly clientId: string;
   private controller?: AbortController;
   private refreshJob?: Promise<GameIdentity>;
   private expiryTimer?: ReturnType<typeof setTimeout>;
@@ -143,7 +154,7 @@ export class AccountService {
   }
   state(): PublicAccountState {
     const expired = this.connection === 'connected' && !!this.record && this.record.expiresAt <= Date.now();
-    return { configured: !!this.clientId, clientId: this.clientId, profile: this.record ? { ...this.record.profile } : null, status: this.operation ?? (expired ? 'offline' : this.connection), stage: this.stage, busy: this.busy, notice: expired ? '登录验证已到期，启动前会重新验证正版身份。' : this.notice || undefined, device: this.device ? { ...this.device } : undefined, localSkin: this.localSkin };
+    return { configured: !!this.clientId, clientId: this.clientId, profile: this.record ? { ...this.record.profile, capeDataUrl: this.connection === 'connected' && !expired && !this.operation ? this.record.profile.capeDataUrl : undefined } : null, status: this.operation ?? (expired ? 'offline' : this.connection), stage: this.stage, busy: this.busy, notice: expired ? '登录验证已到期，启动前会重新验证正版身份。' : this.notice || undefined, device: this.device ? { ...this.device } : undefined, localSkin: this.localSkin };
   }
   private clearExpiry() { clearTimeout(this.expiryTimer); this.expiryTimer = undefined; }
   private scheduleExpiry() {
@@ -162,15 +173,6 @@ export class AccountService {
   private emit() { try { this.deps.changed(this.state()); } catch { /* A closed window must not interrupt account storage. */ } }
   private progress(stage: string, signal: AbortSignal) { if (!signal.aborted) { this.stage = stage; this.emit(); } }
   setLocalSkin(data: string) { this.localSkin = data; this.emit(); return this.state(); }
-  async configure(value: string) {
-    if (this.busy) throw new Error('请先取消正在进行的登录或等待刷新完成。');
-    const id = validateClientId(value);
-    if (id !== this.clientId && this.record) throw new Error('请先退出当前账号，再切换应用 Client ID。');
-    this.clientId = id;
-    this.notice = '';
-    this.emit();
-    return this.state();
-  }
   cancel() {
     if (this.refreshJob || this.committing) throw new Error('正在保存或刷新账号，请稍后再试。');
     this.controller?.abort();
@@ -206,7 +208,7 @@ export class AccountService {
     const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000);
     try {
       requestSignal.throwIfAborted();
-      response = await this.request(url, { ...init, cache: 'no-store', redirect: 'error', signal: requestSignal });
+      response = await this.request(url, { ...init, cache: 'no-store', credentials: 'omit', redirect: 'error', signal: requestSignal });
       requestSignal.throwIfAborted();
       body = await serviceJson(response, requestSignal);
     }
@@ -225,7 +227,7 @@ export class AccountService {
     return body;
   }
   private serviceError(url: string, status: number, data: any) {
-    if (new URL(url).hostname === 'api.minecraftservices.com' && status === 403) return 'Minecraft 服务拒绝访问：请检查 shenBCL 的 Minecraft API 应用审批状态及账号权限。若应用仍在审核，请等待批准后重试；重复输入微软账号密码无法解决此问题。';
+    if (new URL(url).hostname === 'api.minecraftservices.com' && status === 403) return 'Minecraft 服务拒绝访问：请检查 shenBCL 的 Minecraft API 应用审批状态及账号权限。请在应用获准接入后重试。';
     if (new URL(url).hostname === 'login.microsoftonline.com') {
       if (data.error === 'authorization_pending') return '等待浏览器授权';
       if (data.error === 'slow_down') return '等待授权服务';
@@ -300,7 +302,7 @@ export class AccountService {
     const safe = textureUrl(url);
     if (!safe) return;
     try {
-      const response = await this.request(safe, { redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]) });
+      const response = await this.request(safe, { redirect: 'error', credentials: 'omit', signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]) });
       if (!response.ok || Number(response.headers.get('content-length')) > 1024 * 1024) return;
       const reader = response.body?.getReader();
       if (!reader) return;
@@ -328,6 +330,7 @@ export class AccountService {
     if (typeof uhs !== 'string' || !/^\d{1,32}$/.test(uhs) || !validToken(xsts.Token)) throw new Error('Xbox 授权响应不完整。');
     const minecraft = await this.json(`${MC}/authentication/login_with_xbox`, post({ identityToken: `XBL3.0 x=${uhs};${xsts.Token}` }), signal);
     if (!validToken(minecraft.access_token) || !Number.isFinite(minecraft.expires_in) || minecraft.expires_in <= 0 || minecraft.expires_in > 7 * 24 * 60 * 60) throw new Error('Minecraft 认证响应不完整。');
+    const expiresAt = Date.now() + minecraft.expires_in * 1000;
     const headers = { Authorization: `Bearer ${minecraft.access_token}` };
     this.progress('验证 Minecraft 所有权', signal);
     const owned = await this.json(`${MC}/entitlements/mcstore`, { headers }, signal);
@@ -337,7 +340,8 @@ export class AccountService {
     if (!/^[a-f\d]{32}$/i.test(profile.id ?? '') || !/^[A-Za-z\d_]{3,16}$/.test(profile.name ?? '')) throw new Error('Minecraft 角色资料无效。');
     const skin = Array.isArray(profile.skins) ? profile.skins.find((item: any) => item?.state === 'ACTIVE') : undefined;
     const cape = Array.isArray(profile.capes) ? profile.capes.find((item: any) => item?.state === 'ACTIVE') : undefined;
-    let [skinDataUrl, capeDataUrl] = await Promise.all([this.texture(skin?.url, signal), this.texture(cape?.url, signal)]);
+    const [skinTexture, capeDataUrl] = await Promise.all([this.texture(skin?.url, signal), this.texture(cape?.url, signal)]);
+    let skinDataUrl = skinTexture;
     let model: PlayerProfile['model'] = skin?.variant === 'SLIM' ? 'slim' : 'default';
     const appearanceFailures: string[] = [];
     const cachedRecord = this.record;
@@ -347,20 +351,29 @@ export class AccountService {
       if (skinDataUrl) model = cached!.model;
       appearanceFailures.push(skinDataUrl ? '皮肤下载失败，暂时展示上次缓存' : '皮肤下载失败，暂时展示默认角色');
     }
-    if (cape && !capeDataUrl) {
-      capeDataUrl = cached?.capeDataUrl;
-      appearanceFailures.push(capeDataUrl ? '披风下载失败，暂时展示上次缓存' : '披风暂未获取');
-    }
+    if (cape && !capeDataUrl) appearanceFailures.push('官方披风暂未获取');
+    signal.throwIfAborted();
+    if (expiresAt <= Date.now()) throw new Error('Minecraft 登录凭据已到期，请重试。');
     const xuid = xsts.DisplayClaims?.xui?.[0]?.xid ?? '';
     if (typeof xuid !== 'string' || !/^\d{0,32}$/.test(xuid)) throw new Error('Xbox 账号标识无效。');
-    return { record: { clientId: this.clientId, xuid, refreshToken: token.refresh_token, accessToken: minecraft.access_token, expiresAt: Date.now() + minecraft.expires_in * 1000, profile: { id: profile.id, name: profile.name, model, skinDataUrl, capeDataUrl } }, appearanceNotice: appearanceFailures.length ? `账号已连接；${appearanceFailures.join('；')}。` : '' };
+    return { record: { clientId: this.clientId, xuid, refreshToken: token.refresh_token, accessToken: minecraft.access_token, expiresAt, profile: { id: profile.id, name: profile.name, model, skinDataUrl, capeDataUrl } }, appearanceNotice: appearanceFailures.length ? `账号已连接；${appearanceFailures.join('；')}。` : '' };
+  }
+  private issueIdentity(record: StoredAccount): GameIdentity {
+    const identity = Object.freeze({ id: record.profile.id, name: record.profile.name, accessToken: record.accessToken, clientId: this.clientId, xuid: record.xuid });
+    issuedIdentities.set(identity, () => this.record === record && !this.committing && !this.operation && this.connection === 'connected' && record.expiresAt > Date.now());
+    return identity;
+  }
+  async requireGameIdentity(force = true): Promise<GameIdentity> {
+    const identity = await this.identity(force);
+    assertGameIdentity(identity);
+    return identity;
   }
   async identity(force = false): Promise<GameIdentity | undefined> {
     if (this.refreshJob) return this.refreshJob;
     if (this.busy) throw new Error('请先完成或取消当前账号操作，再启动游戏。');
     if (!this.record) return;
     if (this.connection === 'reauthentication-required') throw new Error('登录凭据已失效，请重新连接 Microsoft 账号。');
-    if (!force && this.connection === 'connected' && this.record.expiresAt > Date.now() + 120_000) return { id: this.record.profile.id, name: this.record.profile.name, accessToken: this.record.accessToken, clientId: this.clientId, xuid: this.record.xuid };
+    if (!force && this.connection === 'connected' && this.record.expiresAt > Date.now() + 120_000) return this.issueIdentity(this.record);
     const controller = new AbortController();
     const previous = this.record;
     this.controller = controller;
@@ -377,7 +390,7 @@ export class AccountService {
       this.connection = 'connected';
       this.scheduleExpiry();
       this.notice = appearanceNotice || 'Microsoft 登录状态已验证，角色资料已同步。';
-      return { id: next.profile.id, name: next.profile.name, accessToken: next.accessToken, clientId: this.clientId, xuid: next.xuid };
+      return this.issueIdentity(next);
     })();
     try { return await this.refreshJob; }
     catch (error) { this.connection = (error as AccountError).reauthenticate ? 'reauthentication-required' : 'offline'; this.notice = error instanceof Error ? error.message : '账号刷新失败'; throw error; }

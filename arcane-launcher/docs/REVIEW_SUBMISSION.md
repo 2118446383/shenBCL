@@ -1,6 +1,6 @@
 # shenBCL 源码上传与 Minecraft AppID 申请
 
-这份说明对应当前源码材料。应先通过本地构建、测试和登录流程检查，再生成并上传最终源码包。Microsoft 应用注册与 Minecraft Services 应用审核是两个步骤；已有 Client ID 不表示 Minecraft Services 已批准接入。
+这份说明用于 shenBCL 0.3.7 复审。前一版未获 Minecraft Services 白名单批准。保持同一个 shenBCL 应用身份，提交前先更新现有源码仓库，并核对联系邮箱。
 
 ## 申请入口
 
@@ -43,6 +43,12 @@ tests/
 发布源码时保留程序源码、构建配置、锁定文件、测试和第三方许可材料。提交用 ZIP 应由明确的源码清单生成，不应直接压缩整个开发文件夹，也不应包含 `node_modules`、`dist`、`release-current`、旧版本、`.local`、`.ui-*`、`.tmp`、账号数据、令牌、浏览器缓存、真实实例、游戏或整合包文件。
 
 **GitHub 仓库应直接显示解压后的源码。不要仅上传一个 ZIP 就把它当成可浏览的源码仓库。**
+
+## 更新现有 GitHub 仓库
+
+在现有 shenBCL 仓库上传新 ZIP 解压后的同级文件。旧文件如果在新包中同名，提交时会更新。请另行从当前分支移除 arcane-launcher/src/renderer/assets/minecraft 目录中的五个旧原版素材文件。网页上传不会自动删除这些文件。将仓库默认分支的源码和新包保持一致，保留旧提交以供追溯。
+
+刷新仓库并确认 package.json 显示 0.3.7，根 README 描述新的启动限制，源码树无旧素材目录。审核时可用仓库地址或包含这次变更的提交地址。
 
 ## 在 GitHub 手动上传
 
@@ -98,9 +104,9 @@ npm test
 | Application Name | `shenBCL` |
 | Application ID | `5df4a819-6add-4aba-a297-6e301deeb8a0` |
 | Tenant ID | `51e084d1-df19-4b43-9b53-2876a45a5270` |
-| What type of request is this? | 新应用对应 `New AppID for Approval`，以当前选项文字为准 |
+| What type of request is this? | 选择当前表单中适用于同一 AppID 重新审核的选项；若只有新申请，沿用原 AppID 并在说明中写明为更新后的复审 |
 | Contact Information | 填写你本人能够接收审核通知的邮箱，并按表单要求核对 |
-| Associated website or domain | 填写刚创建、审核人员能够访问的 GitHub 仓库主页完整地址 |
+| Associated website or domain | 填写更新后审核人员能访问的 shenBCL GitHub 仓库地址 |
 | Justification | 可参考下一段如实说明，并替换源码链接 |
 | EULA／Usage Guidelines 确认 | 由你本人阅读相关条款后作出确认 |
 
@@ -110,9 +116,9 @@ Application ID 与 Tenant ID 是应用的公开标识，不是密码。**不需�
 
 将 `[SOURCE_URL]` 替换为你实际上传完成的仓库地址，并在提交前核对描述与最终源码一致：
 
-> I am developing shenBCL, a Windows desktop launcher for Minecraft: Java Edition. I am requesting access to Minecraft Services so users can authorize their own personal Microsoft accounts using the OAuth 2.0 device authorization flow. For Microsoft-authenticated launches, the launcher exchanges tokens through Xbox Live and XSTS, checks Java Edition entitlement, and retrieves the player's UUID, in-game name, skin and cape. Credentials remain in the main process and are stored locally using Windows-backed encryption. Failed or revoked Microsoft authentication is not silently converted to an offline identity. The launcher also provides a separately labeled local/offline profile mode; this is not presented as a verified Microsoft account. Source code and authentication implementation are available at: [SOURCE_URL].
+> I am requesting review of the same shenBCL AppID with source updated to version 0.3.7 after the prior submission was declined. shenBCL is an independent Windows launcher for Minecraft: Java Edition. It is not affiliated with or endorsed by Minecraft, Mojang Studios, or Microsoft. Users authorize their own personal Microsoft accounts on the official Microsoft website using the device authorization flow. Each attempt to start a client or supported Forge server requires a successful online Java Edition entitlement and profile check. The previous local username and offline gameplay path and all user-configurable AppID overrides have been removed. Supported Forge servers require online-mode=true. Credentials are handled in the main process and encrypted locally using Windows-backed storage. The launcher displays only the authenticated player’s active official cape and does not distribute or enable third-party capes. Bundled Minecraft textures and icons were replaced with original artwork. Minecraft game files and assets are obtained from Mojang’s official endpoints. The updated implementation and tests can be reviewed at [SOURCE_URL].
 
-当前程序保留明确标注的本地／离线身份，因此不能声称“所有游戏启动都必须成功登录 Microsoft”。上面的说明只将微软认证和资格要求限定在 Microsoft 正版身份的启动流程。
+正式提交时用更新后的源码链接替换 [SOURCE_URL]。项目仓库现有地址为 [shenBCL](https://github.com/2118446383/shenBCL)。
 
 ## 提交之后
 

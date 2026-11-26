@@ -5,7 +5,9 @@ import path from 'node:path';
 import test from 'node:test';
 import { inspectClientResources, javaRequirement, neoForgeMetadataVersions, scanInstances } from '../arcane-launcher/src/main/services/instances';
 import { parseJavaVersion } from '../arcane-launcher/src/main/services/java';
-import { readInstanceLog, redactSensitiveText } from '../arcane-launcher/src/main/services/logs';
+import { Readable } from 'node:stream';
+import { finished } from 'node:stream/promises';
+import { forwardLaunchOutput, readInstanceLog, redactSensitiveText } from '../arcane-launcher/src/main/services/logs';
 
 async function fixture(run: (directory: string) => Promise<void>): Promise<void> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'arcane-services-test-'));
@@ -21,6 +23,14 @@ async function put(directory: string, relative: string, content = ''): Promise<v
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, content, 'utf8');
 }
+
+test('live logs hide account secrets separated across stream chunks', async () => {
+  const messages: string[] = [];
+  const stream = Readable.from(['session-test-', 'secret\nCookie: a=first; b=second\n', 'tail']);
+  forwardLaunchOutput(stream, 'session-test-secret', message => messages.push(message));
+  await finished(stream);
+  assert.deepEqual(messages.map(line => line.trim()), ['[已隐藏]', 'Cookie: [已隐藏]', 'tail']);
+});
 
 test('scan separates an isolated Forge instance from shared resources and reports missing dependencies', async () => fixture(async root => {
   await put(root, 'versions/1.20.1/1.20.1.json', JSON.stringify({ id: '1.20.1', mainClass: 'net.minecraft.client.main.Main', javaVersion: { majorVersion: 17 }, libraries: [] }));

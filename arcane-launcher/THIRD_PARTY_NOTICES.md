@@ -1,14 +1,14 @@
 # 第三方组件与许可说明
 
-本文件记录 shenBCL 启动器 0.3.6 使用的主要第三方组件。精确安装版本与传递依赖以 `package-lock.json` 为准。发行包中的 npm 代码已合并进 JavaScript，随包的 `THIRD_PARTY_LICENSES.txt` 汇总上游许可与声明；Electron／Chromium 许可文件另行保留。
+本文件记录 shenBCL 启动器 0.3.7 使用的主要第三方组件。精确安装版本与传递依赖以 `package-lock.json` 为准。发行包中的 npm 代码已合并进 JavaScript，随包的 `THIRD_PARTY_LICENSES.txt` 汇总上游许可与声明；Electron／Chromium 许可文件另行保留。
 
-本项目不附带完整 Minecraft 游戏、Java 运行时、模组或整合包。首页下界传送门使用两张 Minecraft 原版纹理，来源与归属见下文。用户选择安装游戏或模组时从官方文件服务及下列已适配镜像取得的内容，按相应权利人的许可和使用条款使用。
+发行包只包含启动器与其运行依赖。原版游戏本体及美术资源由启动器从 Mojang 官方端点下载。shenBCL 自行制作标志、版本图标、默认预览角色和首页环形动效。
 
 ## 下载与元数据服务
 
 | 服务 | 归属与文档 | 当前用途 |
 | --- | --- | --- |
-| BMCLAPI | **bangbang93** 及项目贡献者；[项目文档](https://bmclapidoc.bangbang93.com/)、[项目仓库](https://github.com/bangbang93/BMCLAPI) | Minecraft 版本清单、游戏文件、资源库和加载器相关文件的备用来源 |
+| BMCLAPI | **bangbang93** 及项目贡献者；[项目文档](https://bmclapidoc.bangbang93.com/)、[项目仓库](https://github.com/bangbang93/BMCLAPI) | 仅用于受支持的 Forge／NeoForge 加载器路径 |
 | MCIM（Minecraft Mod 信息镜像） | MCIM 团队及项目贡献者；[项目网站](https://www.mcimirror.top/)、[接口文档](https://www.mcimirror.top/docs)、[项目组织](https://github.com/mcmod-info-mirror) | Modrinth 元数据及受支持模组文件的备用来源 |
 | Modrinth | Modrinth 及内容作者；[API 文档](https://docs.modrinth.com/api/) | 模组／整合包搜索、兼容版本、必需依赖元数据和文件下载 |
 
@@ -142,7 +142,7 @@ KAMUCL 视频和 PCL 等产品用于功能讨论与设计参考，未作为当�
 
 后续加入这些组件前，需要核对对应仓库、实际分发产物和所用版本的许可。源码公开不必然允许复制或再分发，也不能把同一作者不同仓库的许可混用。
 
-Minecraft、Mojang 与 Microsoft 的名称、商标、游戏内容及服务归相应权利人所有。本项目是第三方 Java 版启动器，与其没有隶属或认可关系。微软账号代码流程已实现，仍需配置本项目自己的合法应用身份并完成线上实测；不复制其他启动器的 Client ID、密钥或账号配置。
+Minecraft、Mojang 与 Microsoft 的名称、商标、游戏内容及服务归相应权利人所有。本项目是第三方 Java 版启动器，与其没有隶属或认可关系。微软账号代码流程已实现，使用项目所有者注册的公开应用身份，Minecraft Services 白名单复审与线上实测尚待完成。
 
 ## 0.2 新增组件与设计参考
 
@@ -150,17 +150,11 @@ Minecraft、Mojang 与 Microsoft 的名称、商标、游戏内容及服务归�
 | --- | --- | --- |
 | skinview3d 3.4.2 | MIT | Minecraft 角色、皮肤、披风和动作预览；https://github.com/bs-community/skinview3d |
 | skinview-utils 0.7.1 | MIT | 皮肤纹理工具，skinview3d 的依赖；https://github.com/bs-community/skinview-utils |
-| Three.js 0.156.1 | MIT | 方块场景与下界传送门的 3D 渲染；https://github.com/mrdoob/three.js |
+| Three.js 0.156.1 | MIT | 启动器内的 3D 皮肤渲染；https://github.com/mrdoob/three.js |
 | @resvg/resvg-js 2.6.2 | MPL-2.0 | 仅开发时生成 PNG／ICO 图标，不是渲染器运行依赖；https://github.com/yisibl/resvg-js |
 
 三项新增渲染依赖的完整许可副本随分发放在 docs/licenses/。原始包的 LICENSE 继续保留。
 
 Noctra、Empire、CRYSO 的 Behance 作品与用户提供的 KAMUCL 截图仅用于设计分析。发行包没有包含这些作品的图片或源码。shenBCL 标志、场景几何和默认像素角色为本项目制作。具体链接与实际查看范围见 docs/DESIGN_RESEARCH.md。
 
-## Minecraft 下界传送门纹理
-
-下载中心的正式版草方块与快照泥土方块图标 `grass-icon.png`、`snapshot-icon.png` 为 Minecraft 原始 `icons/icon_128x128.png` 和 `icons/snapshot/icon_128x128.png`，从本机 1.21.1 资源索引 17 的缓存提取，SHA1 分别为 `b62ca8ec10d07e6bf5ac8dae0c8c1d2e6a1e3356` 和 `958d57021d8009de55d6e9e19957a72545e3c30c`。图标版权归 Mojang／Microsoft 所有。
-
-首页使用的 `obsidian.png`（16×16）、`nether_portal.png`（16×512，32 帧）及动画元数据，提取自本机 Minecraft Java Edition 1.20.1 原版客户端 JAR 的 `assets/minecraft/textures/block/`。动画按原版默认的每帧 1 游戏刻（50ms）播放。
-
-这些游戏美术资源的版权归 Mojang／Microsoft 所有，不属于本项目原创资产，也不适用 Vue、Three.js 等组件的开源许可证。Minecraft EULA 与使用准则见 https://www.minecraft.net/eula 和 https://www.minecraft.net/usage-guidelines 。
+Minecraft 的 [EULA](https://www.minecraft.net/eula) 和 [使用准则](https://www.minecraft.net/usage-guidelines) 适用于相关游戏及服务。

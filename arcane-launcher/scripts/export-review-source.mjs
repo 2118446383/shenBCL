@@ -14,11 +14,19 @@ const installerRequire = createRequire(require.resolve('@xmcl/installer'))
 const { ZipFile } = installerRequire('yazl')
 const destination = join(workspace, '审核材料')
 const entries = new Map()
+const localSourcePrefix = `../${basename(project)}/src/`
+const escapedSourcePrefix = localSourcePrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const localSourceImport = new RegExp(`(\\bfrom\\s*)(['"])${escapedSourcePrefix}`, 'g')
 async function addFile(source, name) {
   if (/^\.env(?:$|\.)|^\.npmrc$|\.(?:pem|key|pfx|p12|encrypted)$/i.test(basename(name))) throw new Error(`Private configuration file is not allowed: ${name}`)
   const info = await lstat(source)
   if (!info.isFile() || info.isSymbolicLink()) throw new Error(`Not an ordinary source file: ${name}`)
-  const bytes = await readFile(source)
+  let bytes = await readFile(source)
+  if (name.startsWith('tests/') && name.endsWith('.ts')) {
+    // Local development can live in a renamed sibling folder. Review archives
+    // retain the portable arcane-launcher/ + tests/ layout without editing tests.
+    bytes = Buffer.from(bytes.toString('utf8').replace(localSourceImport, (_match, keyword, quote) => `${keyword}${quote}../arcane-launcher/src/`), 'utf8')
+  }
   if (bytes.length > 5 * 1024 * 1024) throw new Error(`Unexpected large source file: ${name}`)
   if (/\.(?:[cm]?[jt]s|vue|svg|json|md|html|css|txt)$/i.test(name)) {
     const text = bytes.toString('utf8')
@@ -43,11 +51,11 @@ for (const name of ['build-main.mjs', 'build-icons.mjs', 'collect-licenses.mjs',
 for (const name of ['icon.png', 'icon.ico']) await addFile(join(project, 'build', name), `arcane-launcher/build/${name}`)
 for (const name of ['MICROSOFT_LOGIN.md', 'MODPACK_IMPORT.md', 'SECURITY_REVIEW.md', 'REVIEW_SUBMISSION.md']) await addFile(join(project, 'docs', name), `arcane-launcher/docs/${name}`)
 await addTree(join(project, 'docs/licenses'), 'arcane-launcher/docs/licenses')
-for (const name of (await readdir(join(workspace, 'tests'))).filter(name => name.endsWith('.test.ts')).sort()) await addFile(join(workspace, 'tests', name), `tests/${name}`)
+for (const name of (await readdir(join(workspace, 'tests'))).filter(name => name.endsWith('.test.ts') || name === 'verified-account.ts').sort()) await addFile(join(workspace, 'tests', name), `tests/${name}`)
 
 const reviewReadme = `# shenBCL ${metadata.version} — source for application review
 
-shenBCL is a Windows desktop launcher for Minecraft: Java Edition, built with Electron, Vue and TypeScript. This repository contains reviewable source, build configuration and controlled regression tests. It is a working development release; planned AI, multiplayer, map and replay tools are not implemented.
+shenBCL is an independent Windows desktop launcher for Minecraft: Java Edition, built with Electron, Vue and TypeScript. It is not affiliated with or endorsed by Minecraft, Mojang Studios or Microsoft. Current functions include client installation, local instance management, modpack import, logs, world backups, profile previews and supported Forge server management.
 
 ## Current Microsoft integration
 
@@ -55,9 +63,11 @@ shenBCL is a Windows desktop launcher for Minecraft: Java Edition, built with El
 - Public application/client ID: 5df4a819-6add-4aba-a297-6e301deeb8a0
 - Public directory/tenant ID: 51e084d1-df19-4b43-9b53-2876a45a5270
 - Personal-account endpoint: consumers; scopes: XboxLive.signin offline_access.
-- Microsoft device-code endpoint returned HTTP 200 for this application on 2026-11-20. Minecraft Services approval and real-account end-to-end verification are still pending. No approval is claimed.
+- The earlier AppID submission was declined. This source reflects the updated build for re-review. Production account sign-in, restart recovery and gameplay require Minecraft Services approval.
 
-Players authorize in the official Microsoft website. The main process exchanges Microsoft, Xbox Live, XSTS and Minecraft tokens, validates Java entitlement and profile, and retrieves skin/cape images. Tokens stay in the main process and are encrypted locally with Electron safeStorage backed by Windows. The renderer receives only public profile data and the user-facing device code. Failed Microsoft authentication is not silently changed into an offline identity. A separate local/offline mode is explicitly labeled and is not presented as a verified Microsoft account.
+Players authorize on the official Microsoft website. For each game or Forge server launch, the main process completes the Microsoft, Xbox Live, XSTS and Minecraft Services exchange and checks Java Edition entitlement and the official profile. The actual launch requires a current verified identity. There is no local username, offline gameplay or configurable AppID path. Supported Forge servers require online-mode=true.
+
+Windows-backed encryption protects account credentials on disk. The renderer only receives public profile details and the short-lived user-facing device code. The signed-in player’s active official cape may be shown in the launcher preview. Local PNG skin imports are preview-only. Bundled Minecraft textures and icons were removed and replaced with original artwork; vanilla game files, libraries and textures are obtained from Mojang endpoints. The archive contains source and test fixtures. The Windows build contains launcher runtime files.
 
 ## Inspect the implementation
 
@@ -72,7 +82,7 @@ Players authorize in the official Microsoft website. The main process exchanges 
 
 ## Build and test
 
-Use Node.js 22 or newer on Windows. Keep the sibling arcane-launcher/ and tests/ folders in this layout.
+Use Node.js 22 or newer on Windows. Keep the sibling arcane-launcher/ and tests/ folders in this layout. The local development folder may have a different name; exported test source imports are normalized to this review layout.
 
 \`\`\`powershell
 cd arcane-launcher
@@ -91,7 +101,7 @@ The test runner reads ../tests and places temporary fixtures under ../tests/.tmp
 
 This archive contains source, icons/textures, build configuration, licenses, selected technical documentation and test sources. It excludes node_modules, dist, releases, caches, local verification data, account files, tokens, player instances, saves, game archives and machine-specific cleanup reports. SOURCE_MANIFEST.sha256 records the included file bytes.
 
-Project code retains its existing UNLICENSED status; publication for review does not grant an additional open-source license. Third-party code and Minecraft textures retain their respective ownership and terms; see [component notices](arcane-launcher/THIRD_PARTY_NOTICES.md). shenBCL is an independent project and is not affiliated with or endorsed by Mojang or Microsoft.
+Project code retains its existing UNLICENSED status; publication for review does not grant an additional open-source license. Third-party components retain their respective ownership and terms; see [component notices](arcane-launcher/THIRD_PARTY_NOTICES.md). shenBCL is an independent project and is not affiliated with or endorsed by Mojang or Microsoft.
 `
 entries.set('README.md', Buffer.from(reviewReadme, 'utf8'))
 entries.set('arcane-launcher/README.md', Buffer.from('# shenBCL\n\nSee the [review README](../README.md) for the source layout, build steps, authentication flow and approval status.\n', 'utf8'))
@@ -112,5 +122,5 @@ zip.outputStream.pipe(output)
 for (const [name, bytes] of [...entries].sort(([a], [b]) => a.localeCompare(b))) zip.addBuffer(bytes, name, { compress: true, compressionLevel: 9 })
 zip.end()
 await complete
-await writeFile(join(destination, '上传步骤.md'), await readFile(join(project, 'docs/REVIEW_SUBMISSION.md')))
+await writeFile(join(destination, 'shenBCL-' + metadata.version + '-复审说明.md'), await readFile(join(project, 'docs/REVIEW_SUBMISSION.md')))
 console.log(JSON.stringify({ archive, files: entries.size, rawBytes: [...entries.values()].reduce((sum, bytes) => sum + bytes.length, 0) }))

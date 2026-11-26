@@ -6,7 +6,6 @@ export function toSettingsPayload(settings: LauncherSettings): LauncherSettings 
     roots: [...settings.roots],
     javaPath: settings.javaPath,
     memoryMb: Number(settings.memoryMb),
-    playerName: settings.playerName,
     closeOnLaunch: Boolean(settings.closeOnLaunch),
   }
 }
