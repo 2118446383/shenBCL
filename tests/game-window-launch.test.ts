@@ -9,6 +9,8 @@ import { detectJava } from '../arcane-launcher/src/main/services/java';
 import { prepareLaunch } from '../arcane-launcher/src/main/services/launch';
 import type { JavaInstallation, LauncherInstance, LauncherSettings } from '../arcane-launcher/src/shared/contracts';
 
+import { launchTestAccount } from './verified-account';
+
 const options = 'fullscreen:true\r\noverrideWidth:7680\r\noverrideHeight:4320\r\nlang:zh_cn\r\nresourcePacks:["file/keep.zip"]\r\n';
 
 async function withClient(java: JavaInstallation, legacy: boolean, run: (root: string, instance: LauncherInstance, settings: LauncherSettings) => Promise<void>): Promise<void> {
@@ -35,7 +37,7 @@ async function withClient(java: JavaInstallation, legacy: boolean, run: (root: s
     }));
     await writeFile(path.join(childRoot, `${childId}.json`), JSON.stringify({
       id: childId, inheritsFrom: baseId, type: 'release', mainClass: 'net.minecraft.client.main.Main', libraries: [],
-      ...(legacy ? { minecraftArguments: '--height 4096 --width=7680 --fullscreen --fixture-child kept' } : {
+      ...(legacy ? { minecraftArguments: '--username ${auth_player_name} --uuid ${auth_uuid} --accessToken ${auth_access_token} --userType ${user_type} --height 4096 --width=7680 --fullscreen --fixture-child kept' } : {
         arguments: { game: ['--height', '4096', '--width=7680', '--fullscreen=true', '--fixture-child', 'kept'] },
       }),
     }));
@@ -43,7 +45,7 @@ async function withClient(java: JavaInstallation, legacy: boolean, run: (root: s
     const scan = await scanInstances([root]);
     const instance = scan.instances.find(item => item.versionId === childId);
     assert.ok(instance, 'the inherited fixture must be recognized as a client');
-    const settings = { roots: [root], playerName: 'LocalPlayer', javaPath: java.path, memoryMb: 1024, closeOnLaunch: false };
+    const settings = { roots: [root], javaPath: java.path, memoryMb: 1024, closeOnLaunch: false };
     await run(root, instance, settings);
   } finally {
     assert.equal(path.dirname(root), os.tmpdir());
@@ -68,15 +70,16 @@ test('real XMCL normalizes inherited and conditional window flags without changi
   const java = installed.find(item => item.major >= 17);
   if (!java) { context.skip('No Java available for argument-generation fixture'); return; }
   await withClient(java, false, async (root, instance, settings) => {
+    const identity = await launchTestAccount().service.requireGameIdentity();
     const files = await readdir(root);
     const originalVersion = await readFile(path.join(root, 'versions', 'window-test-child', 'window-test-child.json'), 'utf8');
-    const first = await prepareLaunch(instance, settings, installed);
+    const first = await prepareLaunch(instance, settings, installed, identity);
     assertSize(first.args, 1280, 720);
     assert.ok(first.args.includes('--fixture-base'));
     const small = gameWindowSize({ width: 800, height: 560 });
     assert.ok(small.width + 64 <= 800 && small.height + 96 <= 560);
     assert.ok(Math.abs(small.width / small.height - 16 / 9) < 0.01);
-    const second = await prepareLaunch(instance, settings, installed, undefined, small);
+    const second = await prepareLaunch(instance, settings, installed, identity, small);
     assertSize(second.args, small.width, small.height);
     assert.equal(await readFile(path.join(root, 'options.txt'), 'utf8'), options);
     assert.equal(await readFile(path.join(root, 'versions', 'window-test-child', 'window-test-child.json'), 'utf8'), originalVersion);
@@ -89,8 +92,9 @@ test('real XMCL normalizes legacy argument strings and keeps preflight read only
   const java = installed.find(item => item.major >= 17);
   if (!java) { context.skip('No Java available for argument-generation fixture'); return; }
   await withClient(java, true, async (root, instance, settings) => {
+    const identity = await launchTestAccount().service.requireGameIdentity();
     const files = await readdir(root);
-    const plan = await prepareLaunch(instance, settings, installed);
+    const plan = await prepareLaunch(instance, settings, installed, identity);
     assertSize(plan.args, 1280, 720);
     assert.equal(await readFile(path.join(root, 'options.txt'), 'utf8'), options);
     assert.deepEqual(await readdir(root), files);

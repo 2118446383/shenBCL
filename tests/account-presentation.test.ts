@@ -6,12 +6,12 @@ import type { AccountState } from '../arcane-launcher/src/shared/contracts';
 const base: AccountState = { configured: false, clientId: '', profile: null, busy: false };
 const profile = { id: 'a'.repeat(32), name: 'Player', model: 'default' as const };
 
-test('local players remain offline regardless of configured app or imported skin', () => {
+test('signed-out state is unchanged by an app ID or imported preview', () => {
   for (const account of [base, { ...base, configured: true, clientId: 'public-id' }, { ...base, localSkin: 'data:image/png;base64,example' }]) {
     const result = accountPresentation(account);
-    assert.equal(result.kind, 'offline');
+    assert.equal(result.kind, 'signed-out');
     assert.equal(result.verified, false);
-    assert.equal(result.label, '离线账号');
+    assert.equal(result.label, '未登录');
   }
 });
 
@@ -28,11 +28,11 @@ test('only a verified connected profile receives the正版 label', () => {
   assert.equal(accountPresentation({ ...base, status: 'connected' }).verified, false);
 });
 
-test('cached and revoked accounts retain their distinction from a selected offline identity', () => {
+test('cached and revoked accounts retain their distinction from a signed-out profile', () => {
   const cached = accountPresentation({ ...base, profile, status: 'offline' });
   assert.equal(cached.kind, 'microsoft');
   assert.match(cached.label, /缓存账号/);
-  assert.match(cached.description, /不会自动切换/);
+  assert.match(cached.description, /重新验证账号和游戏所有权/);
   const revoked = accountPresentation({ ...base, profile, status: 'reauthentication-required' });
   assert.match(revoked.label, /登录已失效/);
   assert.match(revoked.description, /重新登录/);

@@ -118,14 +118,14 @@ test('unconfigured or invalid application IDs cannot begin login', async () => {
 });
 
 test('an active account cannot be reused with a different client ID', async () => {
-  const service = new AccountService(clientId, saved(), { persist: async () => {}, changed: () => {} });
-  await assert.rejects(service.configure('22222222-3333-4444-5555-666666666666'), /退出当前账号/);
   const other = new AccountService('22222222-3333-4444-5555-666666666666', saved(), { persist: async () => {}, changed: () => {} });
   assert.equal(other.state().profile, null);
 });
 
 test('skin downloads only accept bounded official texture URLs and valid dimensions', () => {
-  assert.equal(textureUrl('https://textures.minecraft.net/texture/' + 'a'.repeat(64)), 'https://textures.minecraft.net/texture/' + 'a'.repeat(64));
+  const valid = 'https://textures.minecraft.net/texture/' + 'a'.repeat(64);
+  assert.equal(textureUrl(valid), valid);
+  assert.equal(textureUrl(valid.replace('https:', 'http:')), valid);
   for (const url of ['file:///private.png', 'https://textures.minecraft.net.evil.test/texture/' + 'a'.repeat(64), 'https://textures.minecraft.net/texture/../../private', 'https://user@textures.minecraft.net/texture/' + 'a'.repeat(64)]) assert.equal(textureUrl(url), undefined);
   assert.throws(() => validateSkinPng(Buffer.from('not an image')), /PNG/);
   const png = Buffer.alloc(33); Buffer.from([137,80,78,71,13,10,26,10]).copy(png); png.write('IHDR',12); png.writeUInt32BE(64,16); png.writeUInt32BE(64,20);
@@ -216,7 +216,6 @@ test('logout holds the account operation until encrypted deletion completes', as
   const loggingOut = service.logout();
   assert.equal(service.state().busy, true);
   await assert.rejects(service.begin(), /账号任务/);
-  await assert.rejects(service.configure(clientId), /等待刷新/);
   release();
   const result = await loggingOut;
   assert.equal(result.status, 'signed-out');
@@ -286,7 +285,7 @@ test('pending initial Microsoft login cannot silently launch as an offline ident
   await service.begin();
   await assert.rejects(service.identity(), /完成或取消当前账号操作/);
   service.cancel();
-  assert.equal(await service.identity(), undefined, 'explicitly cancelling login restores the visible offline mode');
+  assert.equal(await service.identity(), undefined, 'cancelling sign-in leaves the launcher signed out');
 });
 
 test('oversized authorization responses fail before exposing data or starting token polling', async () => {

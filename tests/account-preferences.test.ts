@@ -12,19 +12,19 @@ function preview(width = 64, height = 64) {
 
 test('corrupt account preference shapes cannot prevent startup', () => {
   for (const value of [null, undefined, false, 42, 'bad', [], [clientId], new Date(), new String(clientId)]) {
-    assert.deepEqual(sanitizeAccountPreferences(value), { clientId: '' });
+    assert.deepEqual(sanitizeAccountPreferences(value), {});
   }
-  assert.deepEqual(sanitizeAccountPreferences({ clientId: null, localSkin: {} }), { clientId: '' });
+  assert.deepEqual(sanitizeAccountPreferences({ clientId: null, localSkin: {} }), {});
 });
 
-test('account preferences normalize only public GUIDs and keep independent valid skin fields', () => {
-  assert.deepEqual(sanitizeAccountPreferences({ clientId: ` ${clientId.toUpperCase()} `, ignored: 'not retained' }), { clientId });
+test('legacy application overrides are ignored while valid skin previews are kept', () => {
+  assert.deepEqual(sanitizeAccountPreferences({ clientId: ` ${clientId.toUpperCase()} `, ignored: 'not retained' }), {});
   const localSkin = preview();
-  assert.deepEqual(sanitizeAccountPreferences({ clientId: 'not-a-guid', localSkin }), { clientId: '', localSkin });
-  assert.deepEqual(sanitizeAccountPreferences({ clientId, localSkin: preview(64, 32) }), { clientId, localSkin: preview(64, 32) });
+  assert.deepEqual(sanitizeAccountPreferences({ clientId: 'not-a-guid', localSkin }), { localSkin });
+  assert.deepEqual(sanitizeAccountPreferences({ clientId, localSkin: preview(64, 32) }), { localSkin: preview(64, 32) });
 });
 
-test('non-PNG, noncanonical and oversized previews are discarded without losing the application ID', () => {
+test('non-PNG, noncanonical and oversized previews are discarded without trusting old application IDs', () => {
   const valid = preview();
   const invalid = [
     null, {}, [], 'https://textures.minecraft.net/texture/' + 'a'.repeat(64),
@@ -33,7 +33,7 @@ test('non-PNG, noncanonical and oversized previews are discarded without losing 
     valid + 'A', valid.replace(';base64,', ';base64, '),
     'data:image/png;base64,' + 'A'.repeat(1_400_000), preview(8000, 8000),
   ];
-  for (const localSkin of invalid) assert.deepEqual(sanitizeAccountPreferences({ clientId, localSkin }), { clientId });
+  for (const localSkin of invalid) assert.deepEqual(sanitizeAccountPreferences({ clientId, localSkin }), {});
 });
 
 test('preference sanitization never invokes accessors or accepts inherited identities', () => {
@@ -42,9 +42,9 @@ test('preference sanitization never invokes accessors or accepts inherited ident
     clientId: { get: () => { reads++; throw new Error('must not execute'); } },
     localSkin: { get: () => { reads++; throw new Error('must not execute'); } },
   });
-  assert.deepEqual(sanitizeAccountPreferences(value), { clientId: '' });
+  assert.deepEqual(sanitizeAccountPreferences(value), {});
   assert.equal(reads, 0);
-  assert.deepEqual(sanitizeAccountPreferences(Object.create({ clientId, localSkin: preview() })), { clientId: '' });
-  assert.deepEqual(sanitizeAccountPreferences(Object.assign(Object.create(null), { clientId })), { clientId });
-  assert.deepEqual(sanitizeAccountPreferences(new Proxy({}, { getPrototypeOf() { throw new Error('corrupt object'); } })), { clientId: '' });
+  assert.deepEqual(sanitizeAccountPreferences(Object.create({ clientId, localSkin: preview() })), {});
+  assert.deepEqual(sanitizeAccountPreferences(Object.assign(Object.create(null), { clientId })), {});
+  assert.deepEqual(sanitizeAccountPreferences(new Proxy({}, { getPrototypeOf() { throw new Error('corrupt object'); } })), {});
 });
