@@ -3,8 +3,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Archive, ArrowDownToLine, ArrowRight, Box, Check, ChevronDown, Download, LoaderCircle, Search, Square, TriangleAlert, X } from 'lucide-vue-next'
 import ProjectIcon from './ProjectIcon.vue'
 import MinecraftVersionPicker from './MinecraftVersionPicker.vue'
-import minecraftIcon from '../assets/minecraft/grass-icon.png'
-import snapshotIcon from '../assets/minecraft/snapshot-icon.png'
+import minecraftIcon from '../assets/release.svg'
+import snapshotIcon from '../assets/snapshot.svg'
 import type { CatalogMinecraftVersion, CatalogProject, CatalogSearchResult, CatalogVersion, LauncherInstance, LauncherSnapshot, ModpackPreview, TaskProgress } from '../../shared/contracts'
 
 const props = defineProps<{ snapshot: LauncherSnapshot; selected?: LauncherInstance; busy: boolean; detailTask?: TaskProgress; detailRequest?: number }>()
@@ -238,7 +238,7 @@ onUnmounted(() => { requestNumber++; manifestRequestNumber++; versionRequestNumb
         <button v-if="vanillaResults.length > vanillaLimit" class="catalog-more" @click="vanillaLimit += 40">显示更多版本<ChevronDown :size="14" /></button>
       </section>
       <aside class="panel catalog-details">
-        <div class="detail-icon"><img :src="vanilla.find(item => item.id === selectedMinecraft)?.type === 'release' ? minecraftIcon : snapshotIcon" alt="Minecraft 原版图标" /></div><span class="detail-source">Minecraft Java 版</span><h2>{{ selectedMinecraft || '选择版本' }}</h2>
+        <div class="detail-icon"><img :src="vanilla.find(item => item.id === selectedMinecraft)?.type === 'release' ? minecraftIcon : snapshotIcon" alt="" /></div><span class="detail-source">Minecraft Java 版</span><h2>{{ selectedMinecraft || '选择版本' }}</h2>
         <p>从官方清单获取游戏本体、运行库与资源，并创建独立客户端实例。</p>
         <label class="field-label">实例名称<input v-model="instanceName" class="field-input" maxlength="60" :disabled="busy" placeholder="填写实例名称" /></label>
         <p v-if="vanilla.find(item => item.id === selectedMinecraft)?.type !== 'release' && selectedMinecraft" class="detail-warning"><TriangleAlert :size="14" />测试及历史版本可能与现有模组、存档不兼容，请使用独立存档。</p>
