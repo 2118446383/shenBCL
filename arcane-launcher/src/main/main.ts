@@ -19,7 +19,8 @@ import { gameWindowSize } from './services/game-window'
 import { HiddenInstanceRegistry, InstanceRemovalTickets, planInstanceRemoval, deleteOwnedInstance } from './services/instance-removal'
 import { probeGameDirectoryUsage } from './services/game-process-probe'
 import { MICROSOFT_APPLICATION } from '../shared/microsoft-app'
-import { sanitizeAccountPreferences } from './services/account-preferences'
+import { forwardLaunchOutput } from './services/logs'
+import { sanitizeAccountPreferences, type AccountPreferences } from './services/account-preferences'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(currentDir, '../..')
@@ -47,7 +48,7 @@ let modpacks: ModpackInstallManager
 let catalog: CatalogService
 const downloadControllers = new Map<string, AbortController>()
 const appFetch = createElectronDownloadFetch(net)
-let accountPreferences: { clientId: string; localSkin?: string } = { clientId: '' }
+let accountPreferences: AccountPreferences = {}
 
 async function writeAccountFile(name: string, content: string | Buffer) {
   const root = app.getPath('userData')
@@ -74,12 +75,11 @@ async function readAccountFile(name: string, maximumBytes: number): Promise<Buff
 }
 async function loadAccount() {
   try { accountPreferences = sanitizeAccountPreferences(JSON.parse((await readAccountFile('account-preferences.json', 2 * 1024 * 1024)).toString('utf8'))) } catch { /* Missing or corrupt preferences use the bundled application identity. */ }
-  const clientId = process.env.SHENBCL_MICROSOFT_CLIENT_ID || accountPreferences.clientId || MICROSOFT_APPLICATION.clientId
   let saved: StoredAccount | null = null
   try {
     if (await safeStorage.isAsyncEncryptionAvailable()) saved = JSON.parse((await safeStorage.decryptStringAsync(await readAccountFile('account.encrypted', 4 * 1024 * 1024))).result)
   } catch { /* Corrupt or unavailable credentials require signing in again. */ }
-  accounts = new AccountService(clientId, saved, {
+  accounts = new AccountService(MICROSOFT_APPLICATION.clientId, saved, {
     fetch: appFetch,
     persist: async (record) => {
       if (!await safeStorage.isAsyncEncryptionAvailable()) throw new Error('Windows 凭据加密暂不可用，账号未保存，请稍后重试。')
@@ -93,7 +93,7 @@ async function loadAccount() {
 protocol.registerSchemesAsPrivileged([{ scheme: 'arcane-image', privileges: { secure: true, standard: true, supportFetchAPI: true } }])
 
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
-const defaultSettings = (): LauncherSettings => ({ roots: [workspaceRoot], javaPath: '', memoryMb: Math.min(6144, Math.floor(totalmem() / 1024 ** 2 / 3 / 512) * 512), playerName: 'Traveler', closeOnLaunch: false })
+const defaultSettings = (): LauncherSettings => ({ roots: [workspaceRoot], javaPath: '', memoryMb: Math.min(6144, Math.floor(totalmem() / 1024 ** 2 / 3 / 512) * 512), closeOnLaunch: false })
 async function exists(path: string) { try { await access(path); return true } catch { return false } }
 function safeWithin(root: string, target: string) {
   const rel = relative(resolve(root), resolve(target))
@@ -109,14 +109,12 @@ async function loadSettings() {
 function sanitizeSettings(patch: Partial<LauncherSettings>): LauncherSettings {
   const base = settings ?? defaultSettings()
   const memory = Number(patch.memoryMb ?? base.memoryMb)
-  const playerName = String(patch.playerName ?? base.playerName).trim()
-  if (!/^[a-zA-Z0-9_]{3,16}$/.test(playerName)) throw new Error('玩家名请使用 3–16 位英文字母、数字或下划线。')
   if (!Number.isInteger(memory) || memory < 1024 || memory > Math.max(1024, Math.floor(totalmem() / 1024 ** 2) - 1536)) throw new Error('内存应至少为 1024 MB，并为系统保留至少 1.5 GB。')
   const roots = patch.roots ?? base.roots
   if (!Array.isArray(roots) || roots.some((root) => typeof root !== 'string' || !isAbsolute(root))) throw new Error('实例目录必须是有效的绝对路径。')
   const javaPath = String(patch.javaPath ?? base.javaPath)
   if (javaPath && !isAbsolute(javaPath)) throw new Error('Java 路径必须是绝对路径。')
-  return { roots: [...new Set(roots.map((root) => resolve(root)))].slice(0, 30), javaPath, memoryMb: memory, playerName, closeOnLaunch: Boolean(patch.closeOnLaunch ?? base.closeOnLaunch) }
+  return { roots: [...new Set(roots.map((root) => resolve(root)))].slice(0, 30), javaPath, memoryMb: memory, closeOnLaunch: Boolean(patch.closeOnLaunch ?? base.closeOnLaunch) }
 }
 
 async function persistSettings(next: LauncherSettings) {
@@ -306,12 +304,6 @@ function registerHandlers() {
     } finally { installing = false; downloadControllers.delete(id) }
   })
   handle('account', () => accounts.state())
-  handle('configure-account', async (clientId) => {
-    const next = await accounts.configure(clientId)
-    accountPreferences.clientId = next.clientId
-    await writeAccountFile('account-preferences.json', JSON.stringify(accountPreferences))
-    return next
-  })
   handle('begin-login', async () => {
     if (!await safeStorage.isAsyncEncryptionAvailable()) throw new Error('Windows 凭据加密暂不可用，请稍后再登录。')
     return accounts.begin()
@@ -400,7 +392,7 @@ function registerHandlers() {
   handle('read-log', async (id) => readInstanceLog(await instanceById(id)))
   handle('prepare-launch', async (id) => {
     const instance = await instanceById(id)
-    return prepareLaunch(instance, settings, currentSnapshot!.java, instance.kind === 'client' ? await accounts.identity() : undefined, clientWindowSize())
+    return prepareLaunch(instance, settings, currentSnapshot!.java, await accounts.requireGameIdentity(false), clientWindowSize())
   })
   handle('launch', async (id) => {
     if (installing) throw new Error('正在安装游戏或模组，请等待完成或取消后再启动。')
@@ -411,12 +403,12 @@ function registerHandlers() {
     startingInstances.add(id)
     try {
       const instance = await instanceById(id)
-      sendLaunch({ instanceId: id, type: 'starting', message: '正在检查运行环境与游戏文件…' })
-      const identity = instance.kind === 'client' ? await accounts.identity() : undefined
+      sendLaunch({ instanceId: id, type: 'starting', message: '正在验证游戏所有权和运行环境…' })
+      const identity = await accounts.requireGameIdentity()
       const child = await launchInstance(instance, settings, currentSnapshot!.java, identity, clientWindowSize())
       processes.set(id, child)
-      child.stdout?.on('data', (data) => sendLaunch({ instanceId: id, type: 'stdout', message: data.toString('utf8') }))
-      child.stderr?.on('data', (data) => sendLaunch({ instanceId: id, type: 'stderr', message: data.toString('utf8') }))
+      forwardLaunchOutput(child.stdout, identity.accessToken, message => sendLaunch({ instanceId: id, type: 'stdout', message }))
+      forwardLaunchOutput(child.stderr, identity.accessToken, message => sendLaunch({ instanceId: id, type: 'stderr', message }))
       child.on('error', (error) => { processes.delete(id); sendLaunch({ instanceId: id, type: 'error', message: error.message }) })
       child.on('exit', (code) => { processes.delete(id); sendLaunch({ instanceId: id, type: 'exit', message: code === 0 ? '游戏已正常退出。' : `进程已退出，退出码 ${code ?? '未知'}。`, exitCode: code }) })
       sendLaunch({ instanceId: id, type: 'started', message: `${instance.kind === 'server' ? '服务器' : '游戏'}进程已启动。`, pid: child.pid })

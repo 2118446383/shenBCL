@@ -38,7 +38,6 @@ const bridge: AppBridge = {
     return () => ipcRenderer.removeListener('arcane:modpack-installed', handler)
   },
   account: () => invoke('account'),
-  configureAccount: (clientId) => invoke('configure-account', clientId),
   beginMicrosoftLogin: () => invoke('begin-login'),
   cancelMicrosoftLogin: () => invoke('cancel-login'),
   openMicrosoftLogin: () => invoke('open-login'),
